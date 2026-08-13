@@ -14,13 +14,36 @@ use App\Models\Negocio;
  */
 class AuthController extends Controller
 {
-    private Usuario $usuarioModel;
-    private Negocio $negocioModel;
+    private ?Usuario $usuarioModel = null;
+    private ?Negocio $negocioModel = null;
 
+    /**
+     * Controllers públicos são instanciados antes da action pelo Router. Por
+     * isso, a conexão com banco é criada somente na action que realmente usa
+     * um model; GET /login permanece disponível para informar falhas de banco.
+     */
     public function __construct()
     {
-        $this->usuarioModel = new Usuario();
-        $this->negocioModel = new Negocio();
+    }
+
+    private function usuarioModel(): Usuario
+    {
+        if ($this->usuarioModel === null) {
+            Logger::debug('AuthController: inicializando model de usuário sob demanda');
+            $this->usuarioModel = new Usuario();
+        }
+
+        return $this->usuarioModel;
+    }
+
+    private function negocioModel(): Negocio
+    {
+        if ($this->negocioModel === null) {
+            Logger::debug('AuthController: inicializando model de negócio sob demanda');
+            $this->negocioModel = new Negocio();
+        }
+
+        return $this->negocioModel;
     }
 
     // ----------------------------------------------------------------
@@ -53,7 +76,7 @@ class AuthController extends Controller
             return;
         }
 
-        $usuario = $this->usuarioModel->autenticar($email, $senha);
+        $usuario = $this->usuarioModel()->autenticar($email, $senha);
 
         if (!$usuario) {
             Logger::warning("Tentativa de login falhou: {$email}");
@@ -89,7 +112,7 @@ class AuthController extends Controller
     // ----------------------------------------------------------------
     public function showCadastroForm(): void
     {
-        $ramos = $this->negocioModel->listarRamos();
+        $ramos = $this->negocioModel()->listarRamos();
         View::render('auth/cadastro', [
             'title' => 'Criar Conta',
             'ramos' => $ramos,
@@ -117,7 +140,7 @@ class AuthController extends Controller
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $erros[] = 'E-mail inválido.';
         if (strlen($senha) < 8)      $erros[] = 'Senha deve ter ao menos 8 caracteres.';
         if (strlen($telefone) < 10)  $erros[] = 'Telefone inválido.';
-        if ($this->usuarioModel->emailExiste($email)) $erros[] = 'Este e-mail já está cadastrado.';
+        if ($this->usuarioModel()->emailExiste($email)) $erros[] = 'Este e-mail já está cadastrado.';
         if ($tipoDoc === 'cpf' && strlen($cpf) !== 11) $erros[] = 'CPF inválido.';
         if ($tipoConta === 'negocio') {
             if (empty($nomeNeg)) $erros[] = 'Informe o nome do negócio.';
@@ -125,7 +148,7 @@ class AuthController extends Controller
         }
 
         if (!empty($erros)) {
-            $ramos = $this->negocioModel->listarRamos();
+            $ramos = $this->negocioModel()->listarRamos();
             View::render('auth/cadastro', [
                 'title' => 'Criar Conta',
                 'error' => implode(' ', $erros),
@@ -137,7 +160,7 @@ class AuthController extends Controller
         $token    = Usuario::gerarToken(6);
         $expiraEm = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
-        $usuarioId = $this->usuarioModel->criar([
+        $usuarioId = $this->usuarioModel()->criar([
             'nome_completo'   => $nome,
             'email'           => $email,
             'senha'           => $senha,
@@ -151,7 +174,7 @@ class AuthController extends Controller
         ]);
 
         if ($tipoConta === 'negocio' && $usuarioId > 0) {
-            $this->negocioModel->criar([
+            $this->negocioModel()->criar([
                 'usuario_id'        => $usuarioId,
                 'ramo_atividade_id' => $ramoId,
                 'razao_social'      => $nomeNeg,
@@ -196,7 +219,7 @@ class AuthController extends Controller
             return;
         }
 
-        $ok = $this->usuarioModel->validarToken($email, $token);
+        $ok = $this->usuarioModel()->validarToken($email, $token);
 
         if (!$ok) {
             View::render('auth/validar_token', [
@@ -217,12 +240,12 @@ class AuthController extends Controller
     public function reenviarToken(): void
     {
         $email   = trim($_GET['email'] ?? '');
-        $usuario = $this->usuarioModel->buscarPorEmail($email);
+        $usuario = $this->usuarioModel()->buscarPorEmail($email);
 
         if ($usuario && (int)$usuario->email_verificado === 0) {
             $token    = Usuario::gerarToken(6);
             $expiraEm = date('Y-m-d H:i:s', strtotime('+30 minutes'));
-            $this->usuarioModel->atualizarToken($usuario->id, $token, $expiraEm);
+            $this->usuarioModel()->atualizarToken($usuario->id, $token, $expiraEm);
             $this->enviarEmailToken($email, $usuario->nome_completo, $token);
         }
 
@@ -275,10 +298,4 @@ class AuthController extends Controller
         Logger::debug("TOKEN [{$token}] enviado para: {$email}");
     }
 
-    // ----------------------------------------------------------------
-    private function redir(string $url): void
-    {
-        header("Location: {$url}");
-        exit;
-    }
 }

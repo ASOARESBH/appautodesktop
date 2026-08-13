@@ -321,7 +321,7 @@ class PortalVeiculosController extends Controller
         }
     }
 
-    private function requireAuth(): void
+    protected function requireAuth(): void
     {
         if (empty($_SESSION['user_id'])) {
             $this->redir('/login');
@@ -337,9 +337,4 @@ class PortalVeiculosController extends Controller
         }
     }
 
-    private function redir(string $url): void
-    {
-        header("Location: {$url}");
-        exit;
-    }
 }

@@ -463,3 +463,22 @@ A análise foi realizada por leitura estática do commit `77bbe18`. Não foram f
 ---
 
 **Regra permanente:** primeiro mapear e analisar impacto; depois implementar, testar e atualizar esta documentação.
+
+
+## Atualização operacional — HTTP 500 no login (13 de agosto de 2026)
+
+> **Status:** corrigido e validado localmente em PHP 8.3 com MariaDB temporário e schema do projeto. A validação externa de produção continua dependente da publicação dos arquivos no Hostgator, pois o domínio não respondeu durante a investigação.
+
+| Item | Evidência e decisão técnica |
+|---|---|
+| Problema | `GET /login` retornava HTTP 500 antes de executar `AuthController@showLoginForm`. |
+| Causa raiz primária | `AuthController` redeclarava `redir()` como `private`, enquanto `App\Core\Controller` já o declara como `protected`. Em PHP 8.3, a redução de visibilidade de um método herdado é fatal durante o carregamento da classe. |
+| Evidência | O Router registrava o match de `AuthController@showLoginForm`, mas não a execução. A reprodução em PHP 8.3 confirmou o fatal de visibilidade no carregamento do controller. |
+| Correção | A implementação duplicada de `AuthController::redir()` foi removida para que o controller herde o método protegido da classe base. |
+| Correções preventivas correlatas | Foram removidas as duplicações de `redir()` em `AdminController`, `PortalVeiculosController` e `VeiculosController`; as sobreposições necessárias de `requireAdmin()`/`requireAuth()` em `AdminController`, `PortalController`, `PortalVeiculosController` e `VeiculosController` foram tornadas `protected`. |
+| Disponibilidade da tela pública | `AuthController` passou a instanciar `Usuario` e `Negocio` somente quando a ação exige banco. Assim, `GET /login` não abre PDO apenas para renderizar a tela; `POST /login` e cadastro continuam consultando o banco normalmente. |
+| Erros de inicialização | `app/bootstrap.php` mantém o detalhe em log e retorna somente uma página genérica em produção quando `.env`, configuração crítica ou rotas falham no boot. |
+
+A suíte local isolada validou `GET /login` com HTTP 200, login inválido com HTTP 302 e mensagem controlada, login válido com HTTP 302 para `/admin/dashboard`, dashboard administrativo com HTTP 200, logout com HTTP 302 para `/login` e bloqueio de rota protegida sem sessão com HTTP 302 para `/login`. Não houve novos fatal errors, parse errors ou HTTP 500 no log limpo do servidor de testes.
+
+**Prevenção permanente:** antes de declarar em um controller qualquer método presente em `App\Core\Controller`, conferir sua assinatura e manter visibilidade igual ou menos restritiva. Não usar `private` para sobrescrever `redir`, `json`, `requireAuth` ou `requireAdmin`.

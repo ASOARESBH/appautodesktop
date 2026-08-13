@@ -240,7 +240,7 @@ class AdminController extends Controller
     // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
-    private function requireAdmin(): void
+    protected function requireAdmin(): void
     {
         if (empty($_SESSION['user_id']) || ($_SESSION['user_perfil'] ?? '') !== 'admin') {
             header('Location: /login');
@@ -248,9 +248,4 @@ class AdminController extends Controller
         }
     }
 
-    private function redir(string $url): void
-    {
-        header("Location: {$url}");
-        exit;
-    }
 }

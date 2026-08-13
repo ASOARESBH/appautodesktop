@@ -70,7 +70,7 @@ O login usa e-mail, `password_verify`, usuário ativo e e-mail verificado. O cad
 
 ## 14. Autorização
 
-`AuthMiddleware` só exige `$_SESSION['user_id']`. Use `user_perfil` como chave correta de perfil; o login não grava `user_role`. A guarda privada de `AdminController` é a referência atual para checagem de admin.
+`AuthMiddleware` só exige `$_SESSION['user_id']`. Use `user_perfil` como chave correta de perfil; o login não grava `user_role`. A guarda protegida de `AdminController` é a referência atual para checagem de admin.
 
 ## 15. Multi-Tenant
 
@@ -138,7 +138,7 @@ Preserve PHP MVC leve, PDO com `ERRMODE_EXCEPTION`, MySQL 5.7/utf8 e deploy por 
 
 ## 30. Padrões de Desenvolvimento
 
-Use prepared statements, filtro explícito por `usuario_id`/`veiculo_id`, redirecionamento com `exit`, logs sem PII/segredos, inputs validados, saída escapada e nomenclatura em português do domínio.
+Use prepared statements, filtro explícito por `usuario_id`/`veiculo_id`, redirecionamento com `exit`, logs sem PII/segredos, inputs validados, saída escapada e nomenclatura em português do domínio. Ao sobrescrever `redir`, `json`, `requireAuth` ou `requireAdmin` de `App\\Core\\Controller`, mantenha visibilidade `protected` ou `public`; nunca reduza para `private`, pois PHP 8.3 falha ao carregar a classe.
 
 ## 31. Regras para Alterações
 
@@ -161,6 +161,7 @@ Use `public/` como document root. Envie `vendor/`, crie `.env` fora do document 
 | Data | Base | Mudança |
 |---|---|---|
 | 2026-08-13 | commit `77bbe18` | Skill criada por engenharia reversa estática; detalhes em `docs/APPAUTO-SYSTEM-MAP.md`. |
+| 2026-08-13 | correção de autenticação pendente de commit | Corrigidas sobreposições privadas inválidas de métodos herdados, que causavam HTTP 500 em PHP 8.3; `GET /login` agora inicializa models apenas sob demanda e o bootstrap não expõe detalhes em produção. |
 
 ---
 
