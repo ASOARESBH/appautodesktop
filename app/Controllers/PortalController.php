@@ -889,7 +889,7 @@ class PortalController extends Controller
         return '';
     }
 
-    private function requireAuth(): void
+    protected function requireAuth(): void
     {
         if (empty($_SESSION['user_id'])) {
             header('Location: /login');

@@ -205,7 +205,7 @@ class VeiculosController extends Controller
     }
 
     // ----------------------------------------------------------------
-    private function requireAuth(): void
+    protected function requireAuth(): void
     {
         if (empty($_SESSION['user_id'])) {
             header('Location: /login');
@@ -213,9 +213,4 @@ class VeiculosController extends Controller
         }
     }
 
-    private function redir(string $url): void
-    {
-        header("Location: {$url}");
-        exit;
-    }
 }

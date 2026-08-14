@@ -30,7 +30,12 @@ try {
         'error' => $e->getMessage()
     ]);
     http_response_code(500);
-    echo "❌ Erro ao carregar arquivo .env: " . $e->getMessage() . "\n";
+    if (($_ENV['APP_ENV'] ?? 'prod') === 'prod') {
+        echo '<!DOCTYPE html><html lang="pt-BR"><body><h1>Erro temporário</h1>'
+           . '<p>Não foi possível iniciar o sistema. Tente novamente em instantes.</p></body></html>';
+    } else {
+        echo "Erro ao carregar arquivo .env: " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "\n";
+    }
     exit();
 }
 
@@ -47,8 +52,12 @@ foreach ($requiredEnvVars as $var) {
             'variable' => $var
         ]);
         http_response_code(500);
-        echo "❌ Erro de Configuração: Variável de ambiente '{$var}' não está configurada no arquivo .env\n";
-        echo "Por favor, configure o arquivo .env com as credenciais corretas do banco de dados.\n";
+        if (($_ENV['APP_ENV'] ?? 'prod') === 'prod') {
+            echo '<!DOCTYPE html><html lang="pt-BR"><body><h1>Erro temporário</h1>'
+               . '<p>Não foi possível iniciar o sistema. Tente novamente em instantes.</p></body></html>';
+        } else {
+            echo "Variável de ambiente crítica não configurada: " . htmlspecialchars($var, ENT_QUOTES, 'UTF-8') . "\n";
+        }
         exit();
     }
 }
@@ -170,7 +179,12 @@ try {
         'error' => $e->getMessage()
     ]);
     http_response_code(500);
-    echo "❌ Erro ao carregar rotas: " . $e->getMessage() . "\n";
+    if (($_ENV['APP_ENV'] ?? 'prod') === 'prod') {
+        echo '<!DOCTYPE html><html lang="pt-BR"><body><h1>Erro temporário</h1>'
+           . '<p>Não foi possível iniciar o sistema. Tente novamente em instantes.</p></body></html>';
+    } else {
+        echo "Erro ao carregar rotas: " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "\n";
+    }
     exit();
 }
 
