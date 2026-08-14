@@ -165,42 +165,19 @@ class PortalVeiculosController extends Controller
     public function apiConsultarPlaca(): void
     {
         header('Content-Type: application/json; charset=utf-8');
-        $placa = preg_replace('/[^A-Z0-9]/i', '', strtoupper($_GET['placa'] ?? ''));
 
-        if (strlen($placa) !== 7) {
-            echo json_encode(['erro' => 'Placa inválida. Informe 7 caracteres.']);
+        $resultado = $this->veiculoModel->consultarPlacaAPI((string)($_GET['placa'] ?? ''));
+        if ($resultado['success'] ?? false) {
+            $dados = $resultado['dados'] ?? [];
+            $dados['fonte'] = $resultado['fonte'] ?? 'provedor externo';
+            echo json_encode($dados, JSON_UNESCAPED_UNICODE);
             return;
         }
 
-        // Detectar formato Mercosul (3 letras + 1 número + 1 letra + 2 números)
-        $isMercosul = (bool)preg_match('/^[A-Z]{3}[0-9][A-Z][0-9]{2}$/', $placa);
-
-        // Tentar BrasilAPI primeiro
-        $url  = "https://brasilapi.com.br/api/fipe/tabela/v1"; // endpoint de teste
-        $urlV = "https://brasilapi.com.br/api/vehicles/v1/{$placa}";
-        $dados = $this->fetchJson($urlV);
-
-        if (!$dados || !empty($dados['message'])) {
-            // Fallback: parallelum
-            $urlP = "https://parallelum.com.br/fipe/api/v1/carros/marcas";
-            $urlPV = "https://fipe.parallelum.com.br/api/v2/vehicles/{$placa}";
-            $dados = $this->fetchJson($urlPV);
-        }
-
-        if ($dados && empty($dados['message']) && empty($dados['error'])) {
-            $dados['formato_placa'] = $isMercosul ? 'mercosul' : 'padrao';
-            $dados['placa_formatada'] = $isMercosul
-                ? $placa
-                : substr($placa, 0, 3) . '-' . substr($placa, 3);
-            echo json_encode($dados);
-        } else {
-            echo json_encode([
-                'placa'         => $placa,
-                'formato_placa' => $isMercosul ? 'mercosul' : 'padrao',
-                'placa_formatada' => $isMercosul ? $placa : substr($placa,0,3).'-'.substr($placa,3),
-                'aviso'         => 'Dados não encontrados nas APIs públicas. Preencha manualmente.',
-            ]);
-        }
+        $dados = $resultado['dados'] ?? [];
+        $dados['aviso'] = $resultado['message'] ?? 'Nenhuma fonte retornou dados técnicos para esta placa.';
+        $dados['fontes_tentadas'] = $resultado['fontes_tentadas'] ?? [];
+        echo json_encode($dados, JSON_UNESCAPED_UNICODE);
     }
 
     // ----------------------------------------------------------------
@@ -284,20 +261,6 @@ class PortalVeiculosController extends Controller
     // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
-    private function fetchJson(string $url): ?array
-    {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 8,
-            CURLOPT_HTTPHEADER     => ['Accept: application/json', 'User-Agent: AppAuto/1.0'],
-            CURLOPT_SSL_VERIFYPEER => false,
-        ]);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-        return $resp ? json_decode($resp, true) : null;
-    }
-
     private function processarFotos(int $veiculoId, array $files): void
     {
         $dir = __DIR__ . '/../../public/assets/uploads/veiculos/' . $veiculoId . '/';
