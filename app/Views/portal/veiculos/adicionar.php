@@ -154,7 +154,7 @@ require_once __DIR__ . '/../../layout/portal_header.php';
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Categoria</label>
-                    <select name="categoria" class="form-control">
+                    <select name="categoria" id="campoCategoria" class="form-control">
                         <option value="">Selecione...</option>
                         <?php foreach (['passeio'=>'Passeio','utilitario'=>'Utilitário','suv'=>'SUV','pickup'=>'Pickup','caminhao'=>'Caminhão','moto'=>'Moto','onibus'=>'Ônibus','van'=>'Van','outro'=>'Outro'] as $v=>$l): ?>
                         <option value="<?php echo $v; ?>" <?php echo ($dados['categoria'] ?? '') === $v ? 'selected' : ''; ?>><?php echo $l; ?></option>
@@ -206,73 +206,111 @@ function detectarFormato(placa, elId) {
         : '<span style="color:#1a56db; font-weight:600;"><i class="fas fa-check-circle"></i> Placa Padrão</span>';
 }
 
+function escaparHtml(valor) {
+    return String(valor == null ? '' : valor)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function mostrarResultadoConsulta(tipo, mensagem, dados) {
+    var icones = {success:'fa-check-circle', warning:'fa-exclamation-triangle', danger:'fa-times-circle', info:'fa-spinner fa-spin'};
+    var html = '<div class="alert alert-' + tipo + '"><i class="fas ' + icones[tipo] + '"></i> ' + escaparHtml(mensagem) + '</div>';
+
+    if (dados && !dados.aviso) {
+        var itens = [];
+        var campos = [
+            ['Fonte', dados.fonte], ['Placa', dados.placa_formatada || dados.placa],
+            ['Marca', dados.marca], ['Modelo', dados.modelo], ['Versão', dados.versao],
+            ['Ano', dados.ano], ['Cor', dados.cor], ['Combustível', dados.combustivel],
+            ['Município/UF', [dados.municipio, dados.uf].filter(Boolean).join(' / ')],
+            ['Situação', dados.situacao]
+        ];
+        campos.forEach(function(campo) {
+            if (campo[1]) itens.push('<div><strong>' + escaparHtml(campo[0]) + ':</strong> ' + escaparHtml(campo[1]) + '</div>');
+        });
+        var extras = dados.dados_tecnicos || {};
+        Object.keys(extras).forEach(function(chave) {
+            if (extras[chave]) itens.push('<div><strong>' + escaparHtml(chave) + ':</strong> ' + escaparHtml(extras[chave]) + '</div>');
+        });
+        if (dados.fipe && dados.fipe.valor) {
+            itens.push('<div><strong>FIPE:</strong> ' + escaparHtml(dados.fipe.valor) + (dados.fipe.referencia ? ' <small>(' + escaparHtml(dados.fipe.referencia) + ')</small>' : '') + '</div>');
+        }
+        if (itens.length) {
+            html += '<div class="card" style="margin-top:10px;"><div class="card-body" style="font-size:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:6px 16px;">' + itens.join('') + '</div></div>';
+        }
+    }
+    document.getElementById('resultadoPlaca').innerHTML = html;
+}
+
 function consultarPlaca() {
     var placa = document.getElementById('inputPlacaBusca').value.replace(/[^A-Z0-9]/gi,'').toUpperCase();
     if (placa.length !== 7) {
-        document.getElementById('resultadoPlaca').innerHTML =
-            '<div class="alert alert-danger"><i class="fas fa-times-circle"></i> Informe 7 caracteres.</div>';
+        mostrarResultadoConsulta('danger', 'Informe 7 caracteres.');
         return;
     }
     var btn = document.getElementById('btnConsultar');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    document.getElementById('resultadoPlaca').innerHTML =
-        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Consultando...</div>';
+    mostrarResultadoConsulta('info', 'Consultando fontes disponíveis...');
 
-    fetch('/portal/veiculos/api/consultar-placa?placa=' + placa)
-        .then(function(r){ return r.json(); })
+    fetch('/portal/veiculos/api/consultar-placa?placa=' + encodeURIComponent(placa), {headers:{'Accept':'application/json'}})
+        .then(function(r){
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(function(d){
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-search"></i>';
             if (d.erro) {
-                document.getElementById('resultadoPlaca').innerHTML =
-                    '<div class="alert alert-danger"><i class="fas fa-times-circle"></i> ' + d.erro + '</div>';
+                mostrarResultadoConsulta('danger', d.erro);
                 return;
             }
             if (d.aviso) {
-                document.getElementById('resultadoPlaca').innerHTML =
-                    '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> ' + d.aviso + '</div>';
-                preencherFormulario({placa: placa});
+                mostrarResultadoConsulta('warning', d.aviso, d);
+                preencherFormulario({placa: d.placa || placa});
                 return;
             }
-            document.getElementById('resultadoPlaca').innerHTML =
-                '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Dados encontrados! Formulário preenchido.</div>';
+            mostrarResultadoConsulta('success', 'Dados técnicos encontrados. Revise e salve o formulário.', d);
             preencherFormulario(d);
         })
         .catch(function(){
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-search"></i>';
-            document.getElementById('resultadoPlaca').innerHTML =
-                '<div class="alert alert-danger"><i class="fas fa-times-circle"></i> Erro ao consultar. Preencha manualmente.</div>';
+            mostrarResultadoConsulta('danger', 'Erro temporário na consulta. Preencha manualmente.');
         });
 }
 
+function selecionarOpcao(id, valor) {
+    if (!valor) return;
+    var select = document.getElementById(id);
+    if (!select) return;
+    var esperado = String(valor).toLowerCase();
+    for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value.toLowerCase() === esperado || select.options[i].text.toLowerCase() === esperado) {
+            select.selectedIndex = i;
+            return;
+        }
+    }
+}
+
 function preencherFormulario(d) {
-    if (d.placa)         document.getElementById('campoPlaca').value   = d.placa;
-    if (d.marca)         document.getElementById('campoMarca').value   = d.marca;
-    if (d.modelo)        document.getElementById('campoModelo').value  = d.modelo;
-    if (d.versao)        document.getElementById('campoVersao').value  = d.versao;
+    if (d.placa)         document.getElementById('campoPlaca').value = d.placa;
+    if (d.marca)         document.getElementById('campoMarca').value = d.marca;
+    if (d.modelo)        document.getElementById('campoModelo').value = d.modelo;
+    if (d.versao)        document.getElementById('campoVersao').value = d.versao;
     if (d.renavam)       document.getElementById('campoRenavam').value = d.renavam;
-    if (d.chassi)        document.getElementById('campoChassi').value  = d.chassi;
-    if (d.cor) {
-        var sel = document.getElementById('campoCor');
-        for (var i=0;i<sel.options.length;i++) {
-            if (sel.options[i].text.toLowerCase()===d.cor.toLowerCase()){sel.selectedIndex=i;break;}
-        }
-    }
-    if (d.combustivel) {
-        var sel2 = document.getElementById('campoCombustivel');
-        for (var j=0;j<sel2.options.length;j++) {
-            if (sel2.options[j].value===d.combustivel.toLowerCase()){sel2.selectedIndex=j;break;}
-        }
-    }
+    if (d.chassi)        document.getElementById('campoChassi').value = d.chassi;
+    selecionarOpcao('campoCor', d.cor);
+    selecionarOpcao('campoCombustivel', d.combustivel);
+    selecionarOpcao('campoCategoria', d.categoria);
     if (d.ano) {
-        var anos = d.ano.toString().split('/');
+        var anos = String(d.ano).split('/');
         if (anos[0]) document.getElementById('campoAnoFab').value = anos[0].trim();
         if (anos[1]) document.getElementById('campoAnoMod').value = anos[1].trim();
     }
     if (d.ano_fabricacao) document.getElementById('campoAnoFab').value = d.ano_fabricacao;
-    if (d.ano_modelo)     document.getElementById('campoAnoMod').value = d.ano_modelo;
+    if (d.ano_modelo) document.getElementById('campoAnoMod').value = d.ano_modelo;
     document.getElementById('inputPlacaBusca').value = d.placa || '';
     detectarFormato(d.placa || '', 'infoFormatoPlaca');
     detectarFormato(d.placa || '', 'infoFormatoForm');

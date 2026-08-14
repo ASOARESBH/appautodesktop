@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\ConsultaPlacaService;
 use PDO;
 
 /**
@@ -48,52 +49,12 @@ class Veiculo
     }
 
     // ----------------------------------------------------------------
-    // Consulta de placa via API gratuita (parallelum.com.br)
+    // Consulta de placa com fallback entre provedores configurados
     // ----------------------------------------------------------------
 
     public function consultarPlacaAPI(string $placa): array
     {
-        $placa = self::normalizarPlaca($placa);
-
-        // Tentar API Parallelum (gratuita, sem chave)
-        $url = "https://brasilapi.com.br/api/fipe/tabelas/v1";
-        $urlVeiculo = "https://brasilapi.com.br/api/vehicles/v1/{$placa}";
-
-        $resultado = $this->httpGet($urlVeiculo);
-
-        if ($resultado['success']) {
-            $dados = json_decode($resultado['body'], true);
-            if (!empty($dados)) {
-                return [
-                    'success' => true,
-                    'fonte'   => 'brasilapi',
-                    'dados'   => $dados,
-                ];
-            }
-        }
-
-        // Fallback: API Parallelum
-        $urlParallelum = "https://parallelum.com.br/fipe/api/v1/carros/marcas";
-        $urlPlaca = "https://placa-fipe.parallelum.com.br/api/v1/{$placa}";
-        $resultado2 = $this->httpGet($urlPlaca);
-
-        if ($resultado2['success']) {
-            $dados = json_decode($resultado2['body'], true);
-            if (!empty($dados) && !isset($dados['error'])) {
-                return [
-                    'success' => true,
-                    'fonte'   => 'parallelum',
-                    'dados'   => $dados,
-                ];
-            }
-        }
-
-        return [
-            'success' => false,
-            'fonte'   => 'nenhuma',
-            'dados'   => [],
-            'message' => 'Não foi possível obter dados desta placa nas APIs gratuitas.',
-        ];
+        return (new ConsultaPlacaService())->consultar($placa);
     }
 
     // ----------------------------------------------------------------
@@ -317,26 +278,4 @@ class Veiculo
         ]);
     }
 
-    // ----------------------------------------------------------------
-    // HTTP helper
-    // ----------------------------------------------------------------
-
-    private function httpGet(string $url, int $timeout = 8): array
-    {
-        $ctx = stream_context_create([
-            'http' => [
-                'method'  => 'GET',
-                'timeout' => $timeout,
-                'header'  => "User-Agent: AppAuto/2.0\r\nAccept: application/json\r\n",
-            ],
-            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
-        ]);
-
-        $body = @file_get_contents($url, false, $ctx);
-
-        return [
-            'success' => ($body !== false),
-            'body'    => $body ?: '',
-        ];
-    }
 }
