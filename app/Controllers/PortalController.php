@@ -5,6 +5,7 @@ use App\Core\Controller;
 use App\Core\View;
 use App\Core\Database;
 use App\Core\Logger;
+use App\Services\DocumentoOcrService;
 
 class PortalController extends Controller
 {
@@ -208,31 +209,150 @@ class PortalController extends Controller
 
     public function salvarDocumento(): void
     {
-        $userId    = $_SESSION['user_id'];
-        $veiculoId = $this->getVeiculoAtivo();
-
-        if (!$veiculoId) { $this->redir('/portal/veiculos'); return; }
-
-        $arquivo = '';
-        if (!empty($_FILES['arquivo']['name'])) {
-            $arquivo = $this->uploadArquivo($_FILES['arquivo'], 'documentos');
+        if (!$this->csrfValido()) {
+            $this->redir('/portal/documentos/adicionar?erro=csrf');
         }
 
-        $stmt = $this->db->prepare("
-            INSERT INTO veiculo_documentos (veiculo_id, usuario_id, tipo, titulo, arquivo, tamanho_kb, observacao)
-            VALUES (?,?,?,?,?,?,?)
-        ");
-        $stmt->execute([
-            $veiculoId, $userId,
-            $_POST['tipo'] ?? 'outro',
-            $_POST['titulo'] ?? '',
-            $arquivo,
-            !empty($_FILES['arquivo']['size']) ? (int)($_FILES['arquivo']['size'] / 1024) : 0,
-            $_POST['observacao'] ?? '',
-        ]);
+        $userId = (int)$_SESSION['user_id'];
+        $veiculoId = $this->getVeiculoAtivo();
+        $tipo = strtolower(trim((string)($_POST['tipo'] ?? 'outro')));
+        $tiposPermitidos = ['crlv', 'cnh', 'seguro', 'manual', 'nota_fiscal', 'financiamento', 'garantia', 'recibo', 'contrato_compra', 'laudo_cautelar', 'ipva', 'outro'];
+        if (!in_array($tipo, $tiposPermitidos, true)) {
+            $this->redir('/portal/documentos/adicionar?erro=tipo');
+        }
+        if (!$veiculoId || !$this->veiculoPertenceAoUsuario($veiculoId, $userId)) {
+            $this->redir('/portal/veiculos');
+        }
 
-        Logger::info("Documento cadastrado: veiculo_id={$veiculoId}");
-        $this->redir('/portal/documentos');
+        $servico = new DocumentoOcrService();
+        $armazenado = null;
+        try {
+            $armazenado = $servico->armazenarUpload($_FILES['arquivo'] ?? [], $userId, $veiculoId);
+            $ocr = $servico->analisarArquivo($armazenado['caminho_absoluto'], $armazenado['mime'], $tipo);
+
+            $titulo = trim((string)($_POST['titulo'] ?? ''));
+            if ($titulo === '') {
+                $titulo = strtoupper($tipo) . ' — ' . date('Y');
+            }
+
+            $stmt = $this->db->prepare("
+                INSERT INTO veiculo_documentos (
+                    veiculo_id, usuario_id, tipo, titulo, arquivo, tamanho_kb, observacao,
+                    arquivo_nome_original, arquivo_mime, arquivo_extensao, arquivo_tamanho,
+                    ocr_texto_bruto, ocr_confianca, ocr_dados, status_ocr, ocr_erro, ocr_processado_em
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ");
+            $stmt->execute([
+                $veiculoId,
+                $userId,
+                $tipo,
+                mb_substr($titulo, 0, 150),
+                $armazenado['caminho'],
+                (int)ceil($armazenado['tamanho'] / 1024),
+                trim((string)($_POST['observacao'] ?? '')),
+                $armazenado['nome_original'],
+                $armazenado['mime'],
+                $armazenado['extensao'],
+                $armazenado['tamanho'],
+                $ocr['texto'] !== '' ? $ocr['texto'] : null,
+                $ocr['confianca'],
+                $ocr['dados'] !== [] ? json_encode($ocr['dados'], JSON_UNESCAPED_UNICODE) : null,
+                $ocr['status'],
+                $ocr['status'] === 'erro' ? 'Falha controlada no processamento local.' : null,
+                in_array($ocr['status'], ['sucesso', 'parcial', 'erro'], true) ? date('Y-m-d H:i:s') : null,
+            ]);
+
+            if ($tipo === 'crlv' && ($_POST['aplicar_dados_veiculo'] ?? '1') === '1' && $ocr['dados'] !== []) {
+                $this->aplicarDadosCrlvAoVeiculo($veiculoId, $userId, $ocr['dados']);
+            }
+
+            Logger::info('Documento cadastrado com processamento OCR', [
+                'veiculo_id' => $veiculoId,
+                'tipo' => $tipo,
+                'status_ocr' => $ocr['status'],
+                'campos_extraidos' => count($ocr['campos_encontrados']),
+            ]);
+            $this->redir('/portal/documentos?ocr=' . rawurlencode($ocr['status']));
+        } catch (\Throwable $erro) {
+            if (is_array($armazenado) && !empty($armazenado['caminho_absoluto']) && is_file($armazenado['caminho_absoluto'])) {
+                @unlink($armazenado['caminho_absoluto']);
+            }
+            Logger::error('Falha no cadastro de documento', [
+                'tipo' => $tipo,
+                'classe_erro' => get_class($erro),
+            ]);
+            $this->redir('/portal/documentos/adicionar?erro=upload');
+        }
+    }
+
+    /** POST /portal/documentos/api/analisar-ocr */
+    public function analisarDocumentoOcr(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$this->csrfValido()) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Token de segurança inválido.']);
+            return;
+        }
+
+        $agora = time();
+        if (($agora - (int)($_SESSION['ocr_preview_at'] ?? 0)) < 3) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'message' => 'Aguarde alguns segundos antes de analisar novamente.']);
+            return;
+        }
+        $_SESSION['ocr_preview_at'] = $agora;
+
+        try {
+            $servico = new DocumentoOcrService();
+            $meta = $servico->validarUpload($_FILES['arquivo'] ?? []);
+            $ocr = $servico->analisarArquivo((string)$_FILES['arquivo']['tmp_name'], $meta['mime'], (string)($_POST['tipo'] ?? 'outro'));
+            echo json_encode([
+                'success' => in_array($ocr['status'], ['sucesso', 'parcial'], true),
+                'status' => $ocr['status'],
+                'message' => $ocr['mensagem'],
+                'confidence' => $ocr['confianca'],
+                'dados' => $ocr['dados'],
+                'campos' => $ocr['campos_encontrados'],
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (\Throwable $erro) {
+            Logger::warning('Falha na prévia OCR de documento', ['classe_erro' => get_class($erro)]);
+            http_response_code(422);
+            echo json_encode(['success' => false, 'status' => 'erro', 'message' => 'Não foi possível analisar este documento.']);
+        }
+    }
+
+    /** GET /portal/documentos/{id}/baixar */
+    public function baixarDocumento(string $id): void
+    {
+        $documentoId = (int)$id;
+        $stmt = $this->db->prepare('SELECT * FROM veiculo_documentos WHERE id = ? AND usuario_id = ? LIMIT 1');
+        $stmt->execute([$documentoId, (int)$_SESSION['user_id']]);
+        $documento = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$documento) {
+            http_response_code(404);
+            exit('Documento não encontrado.');
+        }
+
+        try {
+            $servico = new DocumentoOcrService();
+            $arquivo = $servico->caminhoAbsoluto((string)$documento['arquivo']);
+            if (!is_file($arquivo)) {
+                http_response_code(404);
+                exit('Arquivo não encontrado.');
+            }
+            $nome = preg_replace('/[^A-Za-z0-9._-]/', '_', (string)($documento['arquivo_nome_original'] ?: $documento['titulo'])) ?: 'documento';
+            header('Content-Type: ' . ($documento['arquivo_mime'] ?: 'application/octet-stream'));
+            header('Content-Length: ' . (string)filesize($arquivo));
+            header('Content-Disposition: attachment; filename="' . $nome . '"');
+            header('X-Content-Type-Options: nosniff');
+            readfile($arquivo);
+            exit;
+        } catch (\Throwable $erro) {
+            Logger::warning('Falha ao disponibilizar documento', ['documento_id' => $documentoId]);
+            http_response_code(404);
+            exit('Arquivo não encontrado.');
+        }
     }
 
     // =========================================================
@@ -874,19 +994,80 @@ class PortalController extends Controller
         $stmt->execute([$veiculoId, $userId, $tipo, $titulo, $descricao, $data, $km, $valor]);
     }
 
+    /**
+     * Compatibilidade para a galeria existente. Documentos não usam este helper:
+     * seguem para storage privado pelo DocumentoOcrService.
+     */
     private function uploadArquivo(array $file, string $pasta): string
     {
-        $uploadDir = __DIR__ . '/../../public/assets/uploads/' . $pasta . '/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $nome = uniqid('', true) . '.' . $ext;
-        $destino = $uploadDir . $nome;
-
-        if (move_uploaded_file($file['tmp_name'], $destino)) {
-            return '/assets/uploads/' . $pasta . '/' . $nome;
+        if ($pasta !== 'galeria' || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return '';
         }
-        return '';
+        if ((int)($file['size'] ?? 0) <= 0 || (int)$file['size'] > DocumentoOcrService::MAX_BYTES) {
+            return '';
+        }
+
+        $tmp = (string)($file['tmp_name'] ?? '');
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = $finfo ? (string)finfo_file($finfo, $tmp) : '';
+        if ($finfo) {
+            finfo_close($finfo);
+        }
+        $extensoes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($extensoes[$mime])) {
+            return '';
+        }
+
+        $diretorio = __DIR__ . '/../../public/assets/uploads/galeria/';
+        if (!is_dir($diretorio) && !mkdir($diretorio, 0755, true) && !is_dir($diretorio)) {
+            return '';
+        }
+        $nome = bin2hex(random_bytes(18)) . '.' . $extensoes[$mime];
+        $destino = $diretorio . $nome;
+        return move_uploaded_file($tmp, $destino) ? '/assets/uploads/galeria/' . $nome : '';
+    }
+
+    private function veiculoPertenceAoUsuario(int $veiculoId, int $usuarioId): bool
+    {
+        $stmt = $this->db->prepare('SELECT 1 FROM veiculos WHERE id = ? AND usuario_id = ? LIMIT 1');
+        $stmt->execute([$veiculoId, $usuarioId]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    private function aplicarDadosCrlvAoVeiculo(int $veiculoId, int $usuarioId, array $dados): void
+    {
+        $campos = [];
+        $parametros = [];
+        $mapa = [
+            'placa' => 'placa',
+            'renavam' => 'renavam',
+            'chassi' => 'chassi',
+            'ano_fabricacao' => 'ano_fabricacao',
+            'ano_modelo' => 'ano_modelo',
+            'cor' => 'cor',
+            'municipio' => 'municipio_emplacamento',
+            'uf' => 'uf_emplacamento',
+        ];
+        foreach ($mapa as $origem => $coluna) {
+            if (!empty($dados[$origem])) {
+                $campos[] = $coluna . ' = ?';
+                $parametros[] = $dados[$origem];
+            }
+        }
+        if ($campos === []) {
+            return;
+        }
+
+        $parametros[] = $veiculoId;
+        $parametros[] = $usuarioId;
+        $stmt = $this->db->prepare('UPDATE veiculos SET ' . implode(', ', $campos) . ' WHERE id = ? AND usuario_id = ?');
+        $stmt->execute($parametros);
+    }
+
+    private function csrfValido(): bool
+    {
+        $token = (string)($_POST['csrf_token'] ?? $_POST['_csrf'] ?? '');
+        return $token !== '' && hash_equals((string)($_SESSION['csrf_token'] ?? ''), $token);
     }
 
     protected function requireAuth(): void

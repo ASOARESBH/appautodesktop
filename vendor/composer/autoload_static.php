@@ -13,6 +13,10 @@ class ComposerStaticInit1a2ed373d3261278f6494b18abe22802
     );
 
     public static $prefixLengthsPsr4 = array (
+        't' =>
+        array (
+            'thiagoalessio\\TesseractOCR\\' => 27,
+        ),
         'S' =>
         array (
             'Symfony\\Polyfill\\Php80\\' => 23,
@@ -38,6 +42,10 @@ class ComposerStaticInit1a2ed373d3261278f6494b18abe22802
     );
 
     public static $prefixDirsPsr4 = array (
+        'thiagoalessio\\TesseractOCR\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src',
+        ),
         'Symfony\\Polyfill\\Php80\\' =>
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-php80',
@@ -69,9 +77,22 @@ class ComposerStaticInit1a2ed373d3261278f6494b18abe22802
     );
 
     public static $classMap = array (
+        'App\\Controllers\\AdminController' => __DIR__ . '/../..' . '/app/Controllers/AdminController.php',
         'App\\Controllers\\AuthController' => __DIR__ . '/../..' . '/app/Controllers/AuthController.php',
+        'App\\Controllers\\ClientesController' => __DIR__ . '/../..' . '/app/Controllers/ClientesController.php',
+        'App\\Controllers\\ConfiguracoesController' => __DIR__ . '/../..' . '/app/Controllers/ConfiguracoesController.php',
+        'App\\Controllers\\ContasPagarController' => __DIR__ . '/../..' . '/app/Controllers/ContasPagarController.php',
+        'App\\Controllers\\ContasReceberController' => __DIR__ . '/../..' . '/app/Controllers/ContasReceberController.php',
+        'App\\Controllers\\ContratosController' => __DIR__ . '/../..' . '/app/Controllers/ContratosController.php',
         'App\\Controllers\\DashboardController' => __DIR__ . '/../..' . '/app/Controllers/DashboardController.php',
+        'App\\Controllers\\FaturamentoController' => __DIR__ . '/../..' . '/app/Controllers/FaturamentoController.php',
+        'App\\Controllers\\FinanceiroController' => __DIR__ . '/../..' . '/app/Controllers/FinanceiroController.php',
         'App\\Controllers\\HomeController' => __DIR__ . '/../..' . '/app/Controllers/HomeController.php',
+        'App\\Controllers\\IntegracaoController' => __DIR__ . '/../..' . '/app/Controllers/IntegracaoController.php',
+        'App\\Controllers\\IntegracoesController' => __DIR__ . '/../..' . '/app/Controllers/IntegracoesController.php',
+        'App\\Controllers\\PortalController' => __DIR__ . '/../..' . '/app/Controllers/PortalController.php',
+        'App\\Controllers\\PortalVeiculosController' => __DIR__ . '/../..' . '/app/Controllers/PortalVeiculosController.php',
+        'App\\Controllers\\VeiculosController' => __DIR__ . '/../..' . '/app/Controllers/VeiculosController.php',
         'App\\Core\\Auth' => __DIR__ . '/../..' . '/app/Core/Auth.php',
         'App\\Core\\Controller' => __DIR__ . '/../..' . '/app/Core/Controller.php',
         'App\\Core\\Database' => __DIR__ . '/../..' . '/app/Core/Database.php',
@@ -83,7 +104,11 @@ class ComposerStaticInit1a2ed373d3261278f6494b18abe22802
         'App\\Middlewares\\AuthMiddleware' => __DIR__ . '/../..' . '/app/Middlewares/AuthMiddleware.php',
         'App\\Middlewares\\CsrfMiddleware' => __DIR__ . '/../..' . '/app/Middlewares/CsrfMiddleware.php',
         'App\\Middlewares\\SessionTimeoutMiddleware' => __DIR__ . '/../..' . '/app/Middlewares/SessionTimeoutMiddleware.php',
+        'App\\Models\\Negocio' => __DIR__ . '/../..' . '/app/Models/Negocio.php',
         'App\\Models\\User' => __DIR__ . '/../..' . '/app/Models/User.php',
+        'App\\Models\\Usuario' => __DIR__ . '/../..' . '/app/Models/Usuario.php',
+        'App\\Models\\Veiculo' => __DIR__ . '/../..' . '/app/Models/Veiculo.php',
+        'App\\Services\\ConsultaPlacaService' => __DIR__ . '/../..' . '/app/Services/ConsultaPlacaService.php',
         'Attribute' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
         'Dotenv\\Dotenv' => __DIR__ . '/..' . '/vlucas/phpdotenv/src/Dotenv.php',
@@ -142,6 +167,17 @@ class ComposerStaticInit1a2ed373d3261278f6494b18abe22802
         'Symfony\\Polyfill\\Php80\\PhpToken' => __DIR__ . '/..' . '/symfony/polyfill-php80/PhpToken.php',
         'UnhandledMatchError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/UnhandledMatchError.php',
         'ValueError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/ValueError.php',
+        'thiagoalessio\\TesseractOCR\\Command' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/Command.php',
+        'thiagoalessio\\TesseractOCR\\FeatureNotAvailableException' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/FeatureNotAvailableException.php',
+        'thiagoalessio\\TesseractOCR\\FriendlyErrors' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/FriendlyErrors.php',
+        'thiagoalessio\\TesseractOCR\\ImageNotFoundException' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/ImageNotFoundException.php',
+        'thiagoalessio\\TesseractOCR\\NoWritePermissionsForOutputFile' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/NoWritePermissionsForOutputFile.php',
+        'thiagoalessio\\TesseractOCR\\Option' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/Option.php',
+        'thiagoalessio\\TesseractOCR\\Process' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/Process.php',
+        'thiagoalessio\\TesseractOCR\\TesseractNotFoundException' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/TesseractNotFoundException.php',
+        'thiagoalessio\\TesseractOCR\\TesseractOCR' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/TesseractOCR.php',
+        'thiagoalessio\\TesseractOCR\\TesseractOcrException' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/TesseractOcrException.php',
+        'thiagoalessio\\TesseractOCR\\UnsuccessfulCommandException' => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src/UnsuccessfulCommandException.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

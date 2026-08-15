@@ -82,11 +82,11 @@ Há dois fluxos: legado (`VeiculosController`) e portal (`PortalVeiculosControll
 
 ## 17. APIs
 
-Placa: BrasilAPI e Parallelum; OCR legado: Tesseract opcional; OCR portal: OpenAI Vision; chat: OpenAI Chat Completions; e-mail: `mail()`. Use timeout, validação de resposta, TLS verificado e logs sem segredos.
+Placa: agregador configurável de fontes em `ConsultaPlacaService`; OCR de documentos: `DocumentoOcrService` com Tesseract local, idioma `por`, PDF via `pdftoppm` e pré-processamento ImageMagick opcional; chat: OpenAI Chat Completions; e-mail: `mail()`. Use timeout, validação de resposta, TLS verificado e logs sem segredos ou PII.
 
 ## 18. Uploads
 
-Uploads ficam em `public/assets/uploads`, aumentando risco. Não ampliar esse padrão sem MIME com finfo, allowlist de extensão, limite de tamanho, nomes aleatórios, autorização de download e bloqueio de execução. O helper de documentos/galeria atual não valida tipo/tamanho.
+Documentos novos devem usar `DocumentoOcrService` e `storage/documentos` fora do document root, com MIME por `finfo`, allowlist PDF/JPG/PNG, máximo de 10 MB, nome aleatório, permissões restritas e download autorizado por `usuario_id`. Não registrar texto OCR, CPF, nome, número de CNH ou outro dado pessoal em logs. Uploads legados em `public/assets/uploads` continuam sendo risco e não devem ser ampliados.
 
 ## 19. Segurança
 
@@ -162,6 +162,7 @@ Use `public/` como document root. Envie `vendor/`, crie `.env` fora do document 
 |---|---|---|
 | 2026-08-13 | commit `77bbe18` | Skill criada por engenharia reversa estática; detalhes em `docs/APPAUTO-SYSTEM-MAP.md`. |
 | 2026-08-13 | correção de autenticação pendente de commit | Corrigidas sobreposições privadas inválidas de métodos herdados, que causavam HTTP 500 em PHP 8.3; `GET /login` agora inicializa models apenas sob demanda e o bootstrap não expõe detalhes em produção. |
+| 2026-08-14 | OCR local de documentos | Adicionado pipeline de CRLV/CNH com Tesseract, upload privado, migration 003, persistência de status/extração, download autenticado e prévia AJAX protegida por CSRF. |
 
 ---
 

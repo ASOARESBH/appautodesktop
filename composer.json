@@ -11,6 +11,7 @@
     ],
     "require": {
         "php": ">=8.0",
+        "thiagoalessio/tesseract_ocr": "^2.13",
         "vlucas/phpdotenv": "^5.5"
     },
     "autoload": {

@@ -482,3 +482,22 @@ A análise foi realizada por leitura estática do commit `77bbe18`. Não foram f
 A suíte local isolada validou `GET /login` com HTTP 200, login inválido com HTTP 302 e mensagem controlada, login válido com HTTP 302 para `/admin/dashboard`, dashboard administrativo com HTTP 200, logout com HTTP 302 para `/login` e bloqueio de rota protegida sem sessão com HTTP 302 para `/login`. Não houve novos fatal errors, parse errors ou HTTP 500 no log limpo do servidor de testes.
 
 **Prevenção permanente:** antes de declarar em um controller qualquer método presente em `App\Core\Controller`, conferir sua assinatura e manter visibilidade igual ou menos restritiva. Não usar `private` para sobrescrever `redir`, `json`, `requireAuth` ou `requireAdmin`.
+
+
+## Atualização — OCR local de documentos (CRLV/CNH)
+
+A partir do commit de OCR local, o fluxo de documentos do Portal utiliza `App\Services\DocumentoOcrService`. Os arquivos PDF, JPG e PNG são limitados a 10 MB, validados com `finfo`, renomeados aleatoriamente e armazenados em `storage/documentos/{usuario_id}/{veiculo_id}` com permissões restritas; novos arquivos não são servidos diretamente pelo document root. O download ocorre pela rota autenticada `GET /portal/documentos/{id}/baixar`, que exige correspondência de `usuario_id`.
+
+| Componente | Responsabilidade |
+|---|---|
+| `database/migrations/003_documentos_ocr.sql` | Expande `veiculo_documentos` com metadados de arquivo, texto OCR, confiança, dados estruturados, status e índices. Usa `LONGTEXT` para JSON serializado a fim de preservar compatibilidade MySQL 5.7/MariaDB. |
+| `DocumentoOcrService` | Valida upload, converte apenas a primeira página de PDF a 300 DPI com `pdftoppm`, pré-processa imagem quando ImageMagick está disponível, executa Tesseract em português/PSM 6 e extrai CRLV/CNH por regex. |
+| `POST /portal/documentos/api/analisar-ocr` | Fornece prévia AJAX sujeita a CSRF e limitação simples por sessão. Não persiste o arquivo da prévia. |
+| `POST /portal/documentos/salvar` | Reprocessa o original armazenado, persiste metadados e permite aplicar campos técnicos do CRLV ao veículo pertencente ao usuário. |
+| `GET /portal/documentos/{id}/baixar` | Entrega documento privado com autorização por proprietário e `X-Content-Type-Options: nosniff`. |
+
+O texto OCR e os campos de identificação civil são dados pessoais: não entram nos logs. A interface não mostra CPF/nome do proprietário/CNH na prévia; esses dados ficam restritos ao documento persistido. A indisponibilidade de `exec`, Tesseract, idioma `por` ou conversor de PDF não bloqueia o upload: o registro permanece com status controlado e permite preenchimento manual.
+
+### Requisitos do servidor
+
+O ambiente de produção precisa disponibilizar `tesseract` com o pacote de idioma `por`. Para PDF, precisa disponibilizar `pdftoppm`; para pré-processamento opcional, ImageMagick (`magick` ou `convert`). O wrapper Composer `thiagoalessio/tesseract_ocr` é versionado junto a `vendor/`. Consulte a documentação operacional específica antes de publicar.

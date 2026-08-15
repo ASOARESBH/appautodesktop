@@ -66,6 +66,8 @@ Router::group(["middleware" => "Auth"], function () {
     Router::get("/portal/documentos",           "PortalController@documentos");
     Router::get("/portal/documentos/adicionar", "PortalController@adicionarDocumento");
     Router::post("/portal/documentos/salvar",   "PortalController@salvarDocumento");
+    Router::post("/portal/documentos/api/analisar-ocr", "PortalController@analisarDocumentoOcr");
+    Router::get("/portal/documentos/{id}/baixar", "PortalController@baixarDocumento");
 
     // Abastecimentos
     Router::get("/portal/abastecimentos",           "PortalController@abastecimentos");
