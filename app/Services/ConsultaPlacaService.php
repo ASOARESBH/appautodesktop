@@ -109,6 +109,26 @@ final class ConsultaPlacaService
 
         $melhorResultado['fontes_consultadas'] = $fontesComSucesso;
         $melhorResultado['fontes_tentadas'] = $fontesTentadas;
+
+        // O enriquecimento FIPE é opt-in para evitar latência e consumo
+        // inesperados em consultas de placa. O resultado usa cache local.
+        if ($this->envFlag('FIPE_AUTO_ENRICH', false) && empty($melhorResultado['fipe'])) {
+            $anoFipe = (int)($melhorResultado['ano_modelo'] ?? $melhorResultado['ano_fabricacao'] ?? 0);
+            if ($anoFipe > 0 && !empty($melhorResultado['marca']) && !empty($melhorResultado['modelo'])) {
+                $fipe = (new FipeService())->consultarVeiculo(
+                    (string)$melhorResultado['marca'],
+                    (string)$melhorResultado['modelo'],
+                    $anoFipe,
+                    'carros'
+                );
+                if ($fipe['success'] ?? false) {
+                    $melhorResultado['fipe'] = $fipe['dados'];
+                    $fontesComSucesso[] = 'fipe';
+                    $melhorResultado['fontes_consultadas'] = $fontesComSucesso;
+                }
+            }
+        }
+
         $melhorResultado['campos_encontrados'] = $this->camposEncontrados($melhorResultado);
 
         return [
@@ -471,5 +491,14 @@ final class ConsultaPlacaService
     {
         $valor = $_ENV[$chave] ?? getenv($chave) ?: '';
         return is_string($valor) ? trim($valor) : '';
+    }
+
+    private function envFlag(string $chave, bool $padrao): bool
+    {
+        $valor = $this->env($chave);
+        if ($valor === '') {
+            return $padrao;
+        }
+        return in_array(strtolower($valor), ['1', 'true', 'yes', 'on'], true);
     }
 }

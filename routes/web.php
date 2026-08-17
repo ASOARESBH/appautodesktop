@@ -135,6 +135,7 @@ Router::group(["middleware" => "Auth"], function () {
     // =========================================================
     // PAINEL ADMIN
     // =========================================================
+    Router::get("/admin/",                    "AdminController@dashboard");
     Router::get("/admin/dashboard",            "AdminController@dashboard");
     Router::get("/admin/clientes/pessoas",     "AdminController@clientesPessoas");
     Router::get("/admin/clientes/negocios",    "AdminController@clientesNegocios");
@@ -143,6 +144,7 @@ Router::group(["middleware" => "Auth"], function () {
     Router::get("/admin/sair-impersonacao",    "AdminController@sairImpersonacao");
     Router::get("/admin/logs",                 "AdminController@logs");
     Router::get("/admin/configuracoes",        "AdminController@configuracoes");
+    Router::post("/admin/configuracoes/integracoes/testar", "AdminController@testarIntegracao");
     Router::get("/admin/usuario/{id}",         "AdminController@verUsuario");
     Router::get("/admin/negocio/{id}",         "AdminController@verNegocio");
 

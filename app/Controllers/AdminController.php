@@ -8,6 +8,7 @@ use App\Core\Logger;
 use App\Core\View;
 use App\Models\Usuario;
 use App\Models\Negocio;
+use App\Services\IntegracoesService;
 use PDO;
 
 /**
@@ -19,12 +20,14 @@ class AdminController extends Controller
     private Usuario $usuarioModel;
     private Negocio $negocioModel;
     private PDO     $db;
+    private IntegracoesService $integracoes;
 
     public function __construct()
     {
         $this->usuarioModel = new Usuario();
         $this->negocioModel = new Negocio();
         $this->db           = Database::getInstance();
+        $this->integracoes   = new IntegracoesService();
     }
 
     // ----------------------------------------------------------------
@@ -238,6 +241,61 @@ class AdminController extends Controller
     }
 
     // ----------------------------------------------------------------
+    // GET /admin/configuracoes
+    // ----------------------------------------------------------------
+    public function configuracoes(): void
+    {
+        $this->requireAdmin();
+
+        View::render('admin/configuracoes', [
+            'title' => 'Configurações de Integrações',
+            'catalogo' => $this->integracoes->catalogo(),
+            'csrf' => $_SESSION['csrf_token'] ?? '',
+        ]);
+    }
+
+    // ----------------------------------------------------------------
+    // POST /admin/configuracoes/integracoes/testar
+    // ----------------------------------------------------------------
+    public function testarIntegracao(): void
+    {
+        $this->requireAdmin();
+        $this->requireCsrf();
+
+        $provedor = trim((string)($_POST['provedor'] ?? ''));
+        $parametros = [
+            'placa' => trim((string)($_POST['placa'] ?? '')),
+            'vin' => trim((string)($_POST['vin'] ?? '')),
+            'marca' => trim((string)($_POST['marca'] ?? '')),
+            'modelo' => trim((string)($_POST['modelo'] ?? '')),
+            'ano_modelo' => (int)($_POST['ano_modelo'] ?? 0),
+            'tipo_veiculo' => trim((string)($_POST['tipo_veiculo'] ?? 'carros')),
+            'modo' => trim((string)($_POST['modo'] ?? 'documento')),
+            'imagem_url' => trim((string)($_POST['imagem_url'] ?? '')),
+        ];
+        if (isset($_FILES['imagem']) && is_array($_FILES['imagem'])) {
+            $parametros['arquivo'] = $_FILES['imagem'];
+        }
+
+        try {
+            $resultado = $this->integracoes->testar($provedor, $parametros);
+            $status = (int)($resultado['status'] ?? (($resultado['success'] ?? false) ? 200 : 502));
+            unset($resultado['status']);
+            $this->json($resultado, $status);
+        } catch (\Throwable $e) {
+            Logger::error('Teste de integração administrativa falhou', [
+                'provedor' => $provedor !== '' ? $provedor : 'não informado',
+                'tipo_erro' => get_class($e),
+            ]);
+            $this->json([
+                'success' => false,
+                'detalhes' => [],
+                'message' => 'Não foi possível concluir o teste. Revise a configuração e tente novamente.',
+            ], 500);
+        }
+    }
+
+    // ----------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------
     protected function requireAdmin(): void
@@ -245,6 +303,19 @@ class AdminController extends Controller
         if (empty($_SESSION['user_id']) || ($_SESSION['user_perfil'] ?? '') !== 'admin') {
             header('Location: /login');
             exit;
+        }
+    }
+
+    private function requireCsrf(): void
+    {
+        $token = (string)($_POST['csrf_token'] ?? '');
+        $esperado = (string)($_SESSION['csrf_token'] ?? '');
+        if ($token === '' || $esperado === '' || !hash_equals($esperado, $token)) {
+            $this->json([
+                'success' => false,
+                'detalhes' => [],
+                'message' => 'Token CSRF inválido.',
+            ], 403);
         }
     }
 

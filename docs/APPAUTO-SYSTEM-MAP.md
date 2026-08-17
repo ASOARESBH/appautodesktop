@@ -315,17 +315,30 @@ flowchart LR
     VehicleModel --> VehicleDB[(veiculos / veiculo_fotos)]
     Legacy --> PlateAPI[BrasilAPI -> Parallelum]
     Portal --> PlateAPI
-    Legacy --> OCRLocal[Tesseract opcional]
-    Portal --> OCRVision[OpenAI Vision]
+    Legacy --> OCRPipeline[OCR externo configurável]
+    Portal --> OCRPipeline
+    OCRPipeline --> OCRLocal[Tesseract local fallback]
+    OCRPipeline --> Cloudmersive[Cloudmersive]
+    OCRPipeline --> OCRSpace[OCR.Space]
+    OCRPipeline --> PixLab[PixLab]
+    PlateAPI --> FIPE[FIPE v2 opcional]
+    Admin --> Integracoes[AdminController /admin/configuracoes]
+    Integracoes --> FIPE
+    Integracoes --> vPIC[NHTSA vPIC]
+    Integracoes --> OCRPipeline
 ```
 
 | Integração | Onde é usada | Configuração | Tratamento observado |
 |---|---|---|---|
-| BrasilAPI vehicles | `Veiculo` e `PortalVeiculosController` | Sem chave | Timeout de oito segundos nas implementações cURL; endpoint pode não corresponder ao serviço esperado. |
-| Parallelum/placa-fipe | `Veiculo` e `PortalVeiculosController` | Sem chave | Fallback; endpoints diferem entre os dois fluxos. |
-| OpenAI Chat Completions | `PortalController@iaChat` | `$_ENV['OPENAI_API_KEY']` | Sem timeout explícito; resposta genérica em erro. |
-| OpenAI Vision | `PortalVeiculosController@apiOCR` | `getenv('OPENAI_API_KEY')` | Pode não enxergar variável carregada por `createImmutable`; resposta JSON é extraída por regex. |
-| Tesseract | `Veiculo@processarOCR` | Binário no host | Executa `which tesseract`; fallback para preenchimento manual. |
+| API Placas / APIBrasil / PlacaAPI | `ConsultaPlacaService` | `APIPLACAS_*`, `APIBRASIL_*`, `PLACAAPI_*` | Fallback configurável, timeout curto, TLS validado e contrato normalizado sem dados pessoais. |
+| FIPE v2 | `FipeService` e `ConsultaPlacaService` | `FIPE_API_BASE_URL`, `FIPE_API_TOKEN`, `FIPE_AUTO_ENRICH` | Enriquecimento opt-in por marca/modelo/ano, cache local de 24h e tratamento de 403/429. |
+| Cloudmersive | `OcrExternoService`, portal e `/admin/configuracoes` | `CLOUDMERSIVE_API_KEY`, `CLOUDMERSIVE_BASE_URL` | Leitura de placa e OCR de imagem com allowlist, limite de 10 MB, TLS e resposta sanitizada. |
+| OCR.Space | `OcrExternoService`, fallback e painel admin | `OCRSPACE_API_KEY`, `OCRSPACE_ENDPOINT`, `OCRSPACE_LANGUAGE` | OCR geral de imagem/PDF, fallback configurável e sem exposição de chave ao navegador. |
+| PixLab | `OcrExternoService`, teste administrativo | `PIXLAB_API_KEY`, `PIXLAB_OCR_ENDPOINT`, `PIXLAB_LANGUAGE` | OCR por URL HTTPS; mantido como alternativa até validação de custo/precisão. |
+| NHTSA vPIC | `VpicService` e painel admin | Sem chave no fluxo básico | Complemento por VIN; não substitui placa, Renavam ou fonte brasileira. |
+| Google ML Kit | Aplicativo Android | `ML_KIT_ENABLED` como indicador | OCR local no cliente Android; o PHP não envia imagem ao ML Kit. |
+| Tesseract | `Veiculo@processarOCR` e fallback local | Binário no host | Mantido como fallback sem envio a terceiros; preenchimento manual quando indisponível. |
+| OpenAI Chat Completions | `PortalController@iaChat` | `OPENAI_API_KEY` | Permanece somente no assistente IA; não é mais usado para OCR de veículos. |
 | E-mail nativo | `AuthController` | configuração do MTA do host | Retorno de `mail()` é ignorado; token logado em debug fora de produção. |
 
 ## 11. Uploads e arquivos
@@ -336,13 +349,13 @@ flowchart LR
 | Fotos do portal | `public/assets/uploads/veiculos/{id}/` | MIME `jpeg`, `png`, `webp` | Sem limite de tamanho; extensão do cliente; CRUD portal está quebrado. |
 | Documentos do portal | `public/assets/uploads/documentos/` | **Nenhuma** | Alto risco de upload de arquivo não esperado para área pública. |
 | Galeria do portal | `public/assets/uploads/galeria/` | **Nenhuma** | Alto risco de upload de arquivo não esperado para área pública. |
-| OCR Vision | Arquivo temporário PHP | Só testa existência do upload | Sem limite/MIME prévio antes de converter para base64 e enviar a terceiro. |
+| OCR de veículos | Arquivo temporário PHP | `OcrExternoService` valida MIME e tamanho antes de envio | O arquivo só é enviado ao provedor configurado; falhas retornam ao Tesseract local/manual. |
 
 ## 12. Frontend e layouts
 
 As views `auth/`, `admin/`, `veiculos/`, `negocio/`, `perfil/` e `portal/` são tratadas como self-contained por `View::render`, portanto incluem layouts diretamente. As views legadas recebem `erp_header.php` e `erp_footer.php` automaticamente. Esse modelo é funcional, mas coexistem layouts `app_*`, `erp_*`, `public_*`, `portal_*` e `header/footer`, evidenciando transição incompleta.
 
-O portal usa Bootstrap, Font Awesome e Chart.js por CDN. Formulários de autenticação usam `View::csrfField()`, cujo campo é `csrf_token`. Muitos formulários do PortalController também enviam `csrf_token` manualmente, mas nenhuma rota aplica `CsrfMiddleware`. Já `PortalVeiculosController` espera `_csrf`, criando incompatibilidade com suas próprias views.
+O portal usa Bootstrap, Font Awesome e Chart.js por CDN. Formulários usam `View::csrfField()`, cujo campo é `csrf_token`. O endpoint de OCR do legado e o endpoint do portal agora aceitam `csrf_token` e `_csrf` de forma compatível; os testes administrativos usam `csrf_token` e exigem perfil `admin`.
 
 ## 13. Segurança — auditoria estática inicial
 

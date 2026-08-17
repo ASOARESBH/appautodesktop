@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Core\Logger;
 use App\Core\View;
 use App\Models\Veiculo;
+use App\Services\OcrExternoService;
 
 /**
  * VeiculosController — AppAuto SaaS
@@ -160,6 +161,7 @@ class VeiculosController extends Controller
     public function apiOCR(): void
     {
         $this->requireAuth();
+        $this->requireCsrf();
         header('Content-Type: application/json; charset=utf-8');
 
         if (empty($_FILES['imagem']['tmp_name'])) {
@@ -167,10 +169,34 @@ class VeiculosController extends Controller
             return;
         }
 
-        $tmpPath = $_FILES['imagem']['tmp_name'];
-        $resultado = $this->veiculoModel->processarOCR($tmpPath);
+        try {
+            $externo = (new OcrExternoService())->analisarUpload($_FILES['imagem'], 'documento');
+            if ($externo['success'] ?? false) {
+                $texto = (string)($externo['dados']['texto'] ?? '');
+                echo json_encode([
+                    'success' => true,
+                    'fonte' => $externo['provider'] ?? 'ocr_externo',
+                    'texto' => $texto,
+                    'extraido' => $this->extrairCamposOcr($texto),
+                    'campos_encontrados' => $externo['dados']['campos_encontrados'] ?? [],
+                ], JSON_UNESCAPED_UNICODE);
+                return;
+            }
+        } catch (\RuntimeException $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            return;
+        } catch (\Throwable $e) {
+            Logger::warning('OCR externo falhou; tentando OCR local', [
+                'tipo_erro' => get_class($e),
+            ]);
+        }
 
-        echo json_encode($resultado);
+        // Fallback local já existente, sem enviar a imagem a terceiros.
+        $resultado = $this->veiculoModel->processarOCR((string)$_FILES['imagem']['tmp_name']);
+        if (is_array($resultado)) {
+            $resultado['fonte'] = 'tesseract_local';
+        }
+        echo json_encode($resultado, JSON_UNESCAPED_UNICODE);
     }
 
     // ----------------------------------------------------------------
@@ -201,6 +227,51 @@ class VeiculosController extends Controller
                 $this->veiculoModel->salvarFoto($veiculoId, $caminho, 'exterior', $principal);
                 $principal = false;
             }
+        }
+    }
+
+    private function extrairCamposOcr(string $texto): array
+    {
+        $textoMaiusculo = strtoupper($texto);
+        $dados = [];
+
+        if (preg_match('/\b([A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2})\b/', $textoMaiusculo, $m)) {
+            $dados['placa'] = $m[1];
+        }
+        if (preg_match('/RENAVAM[:\s]*([0-9]{9,11})/i', $texto, $m)) {
+            $dados['renavam'] = $m[1];
+        }
+        if (preg_match('/CHASSI[:\s]*([A-HJ-NPR-Z0-9]{17})/i', $textoMaiusculo, $m)) {
+            $dados['chassi'] = $m[1];
+        }
+        if (preg_match('/ANO[^0-9]*([0-9]{4})[\/-]([0-9]{4})/i', $texto, $m)) {
+            $dados['ano_fabricacao'] = (int)$m[1];
+            $dados['ano_modelo'] = (int)$m[2];
+        }
+
+        foreach (['BRANCA', 'PRETA', 'PRATA', 'CINZA', 'VERMELHA', 'AZUL', 'VERDE', 'AMARELA', 'MARROM', 'BEGE', 'LARANJA', 'ROXA', 'VINHO'] as $cor) {
+            if (str_contains($textoMaiusculo, $cor)) {
+                $dados['cor'] = ucfirst(strtolower($cor));
+                break;
+            }
+        }
+        foreach (['GASOLINA', 'ETANOL', 'FLEX', 'DIESEL', 'GNV', 'ELÉTRICO', 'ELETRICO'] as $combustivel) {
+            if (str_contains($textoMaiusculo, $combustivel)) {
+                $dados['combustivel'] = strtolower($combustivel === 'ELÉTRICO' ? 'eletrico' : $combustivel);
+                break;
+            }
+        }
+        return $dados;
+    }
+
+    private function requireCsrf(): void
+    {
+        $token = (string)($_POST['csrf_token'] ?? '');
+        $esperado = (string)($_SESSION['csrf_token'] ?? '');
+        if ($token === '' || $esperado === '' || !hash_equals($esperado, $token)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Token CSRF inválido.'], JSON_UNESCAPED_UNICODE);
+            exit;
         }
     }
 

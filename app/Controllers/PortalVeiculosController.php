@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\View;
 use App\Models\Veiculo;
+use App\Services\OcrExternoService;
 
 /**
  * PortalVeiculosController — Módulo de Veículos dentro do Portal de Veículos
@@ -185,58 +186,38 @@ class PortalVeiculosController extends Controller
     // ----------------------------------------------------------------
     public function apiOCR(): void
     {
+        $this->requireCsrf();
         header('Content-Type: application/json; charset=utf-8');
         if (empty($_FILES['imagem']['tmp_name'])) {
-            echo json_encode(['erro' => 'Nenhuma imagem enviada.']);
+            echo json_encode(['success' => false, 'message' => 'Nenhuma imagem enviada.']);
             return;
         }
 
-        // OCR via OpenAI Vision (se disponível) ou retorno básico
-        $apiKey = getenv('OPENAI_API_KEY');
-        if (!$apiKey) {
-            echo json_encode(['aviso' => 'OCR não configurado. Preencha os dados manualmente.']);
-            return;
-        }
-
-        $imgData = base64_encode(file_get_contents($_FILES['imagem']['tmp_name']));
-        $mime    = mime_content_type($_FILES['imagem']['tmp_name']);
-
-        $payload = json_encode([
-            'model'    => 'gpt-4o-mini',
-            'messages' => [[
-                'role'    => 'user',
-                'content' => [
-                    ['type' => 'text', 'text' => 'Extraia os dados do documento do veículo (CRLV) nesta imagem. Retorne JSON com: placa, renavam, chassi, marca, modelo, ano_fabricacao, ano_modelo, cor, combustivel, categoria. Se não encontrar um campo, deixe null.'],
-                    ['type' => 'image_url', 'image_url' => ['url' => "data:{$mime};base64,{$imgData}"]],
-                ],
-            ]],
-            'max_tokens' => 500,
-        ]);
-
-        $ch = curl_init('https://api.openai.com/v1/chat/completions');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payload,
-            CURLOPT_HTTPHEADER     => ["Authorization: Bearer {$apiKey}", 'Content-Type: application/json'],
-            CURLOPT_TIMEOUT        => 30,
-        ]);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-
-        $json = json_decode($resp, true);
-        $content = $json['choices'][0]['message']['content'] ?? '';
-
-        // Extrair JSON da resposta
-        if (preg_match('/\{.*\}/s', $content, $m)) {
-            $dados = json_decode($m[0], true);
-            if ($dados) {
-                echo json_encode($dados);
+        try {
+            $resultado = (new OcrExternoService())->analisarUpload($_FILES['imagem'], 'documento');
+            if ($resultado['success'] ?? false) {
+                echo json_encode([
+                    'success' => true,
+                    'fonte' => $resultado['provider'] ?? 'ocr_externo',
+                    'dados' => $resultado['dados'] ?? [],
+                    'aviso' => 'Resultado assistivo. Revise os campos antes de salvar.',
+                ], JSON_UNESCAPED_UNICODE);
                 return;
             }
+        } catch (\RuntimeException $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            return;
+        } catch (\Throwable $e) {
+            Logger::warning('OCR externo do portal falhou; tentando OCR local', [
+                'tipo_erro' => get_class($e),
+            ]);
         }
 
-        echo json_encode(['aviso' => 'Não foi possível extrair os dados. Preencha manualmente.']);
+        $resultadoLocal = $this->veiculoModel->processarOCR((string)$_FILES['imagem']['tmp_name']);
+        if (is_array($resultadoLocal)) {
+            $resultadoLocal['fonte'] = 'tesseract_local';
+        }
+        echo json_encode($resultadoLocal, JSON_UNESCAPED_UNICODE);
     }
 
     // ----------------------------------------------------------------
@@ -293,10 +274,13 @@ class PortalVeiculosController extends Controller
 
     private function requireCsrf(): void
     {
-        $token = $_POST['_csrf'] ?? '';
-        if (!hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+        $token = (string)($_POST['csrf_token'] ?? $_POST['_csrf'] ?? '');
+        $esperado = (string)($_SESSION['csrf_token'] ?? '');
+        if ($token === '' || $esperado === '' || !hash_equals($esperado, $token)) {
             http_response_code(403);
-            exit('Token CSRF inválido.');
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => 'Token CSRF inválido.'], JSON_UNESCAPED_UNICODE);
+            exit;
         }
     }
 
